@@ -87,8 +87,54 @@ async def predict_fraud(txn: Transaction):
     )
 
 
-@app.post("/predict_batch")
+@app.post("/predict_batch", response_model=List[FraudPrediction])
 async def predict_fraud_batch(txns: List[Transaction]):
-    """TODO (students): batch version of /predict — retrieve features for all
-    customers in one call (store.get_customer_features_batch) and score each."""
-    raise HTTPException(status_code=501, detail="predict_fraud_batch not implemented yet")
+    """Score multiple transactions using one batch feature-store lookup."""
+
+    start_time = time.perf_counter()
+
+    customer_ids = [txn.customer_id for txn in txns]
+
+    try:
+        batch_features = store.get_customer_features_batch(customer_ids)
+    except Exception:
+        batch_features = {
+            customer_id: None
+            for customer_id in customer_ids
+        }
+
+    predictions = []
+
+    for txn in txns:
+        customer_features = batch_features.get(txn.customer_id)
+
+        if customer_features is None:
+            customer_features = {
+                "transaction_count": 0,
+                "avg_amount": 0.0,
+            }
+
+        merged_features = {
+            **txn.model_dump(),
+            **customer_features,
+        }
+
+        prediction = detector.predict(merged_features)
+
+        predictions.append(
+            FraudPrediction(
+                transaction_id=txn.transaction_id,
+                fraud_probability=prediction["fraud_probability"],
+                is_fraud=prediction["is_fraud"],
+                model_version=prediction["model_version"],
+                latency_ms=0.0,
+            )
+        )
+
+    total_latency_ms = (time.perf_counter() - start_time) * 1000
+    per_item_latency_ms = total_latency_ms / len(txns) if txns else 0.0
+
+    for prediction in predictions:
+        prediction.latency_ms = round(per_item_latency_ms, 3)
+
+    return predictions

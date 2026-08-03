@@ -65,6 +65,8 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    healthcheck:
+      disable: true
     depends_on:
       kafka:
         condition: service_started
