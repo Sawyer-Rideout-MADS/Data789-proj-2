@@ -53,14 +53,38 @@ async def model_info():
 
 @app.post("/predict", response_model=FraudPrediction)
 async def predict_fraud(txn: Transaction):
-    """TODO (students):
-    1. look up customer features:  store.get_customer_features(txn.customer_id)
-    2. merge them with the transaction fields into one dict
-    3. score:  detector.predict(merged)
-    4. measure latency and return a FraudPrediction
-    Invalid input already returns HTTP 422 automatically (Pydantic)."""
-    _ = time.time()
-    raise HTTPException(status_code=501, detail="predict_fraud not implemented yet")
+    """Score a single transaction for fraud."""
+
+    start_time = time.perf_counter()
+
+    try:
+        customer_features = store.get_customer_features(txn.customer_id)
+    except Exception:
+        # The API should still work when Redis is unavailable.
+        customer_features = None
+
+    if customer_features is None:
+        customer_features = {
+            "transaction_count": 0,
+            "avg_amount": 0.0,
+        }
+
+    merged_features = {
+        **txn.model_dump(),
+        **customer_features,
+    }
+
+    prediction = detector.predict(merged_features)
+
+    latency_ms = (time.perf_counter() - start_time) * 1000
+
+    return FraudPrediction(
+        transaction_id=txn.transaction_id,
+        fraud_probability=prediction["fraud_probability"],
+        is_fraud=prediction["is_fraud"],
+        model_version=prediction["model_version"],
+        latency_ms=round(latency_ms, 3),
+    )
 
 
 @app.post("/predict_batch")

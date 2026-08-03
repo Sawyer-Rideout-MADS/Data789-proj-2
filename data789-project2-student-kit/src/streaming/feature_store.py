@@ -38,20 +38,36 @@ class FeatureStore:
     def _key(customer_id: str) -> str:
         return f"features:{customer_id}"
 
-    # --- IMPLEMENT ---------------------------------------------------------
+        # --- IMPLEMENT ---------------------------------------------------------
     def store_customer_features(self, customer_id: str, features: dict) -> None:
-        """Serialize `features` to JSON and SET it under _key(customer_id)
-        with an expiry of self.ttl_seconds. (Hint: redis SET(..., ex=...))"""
-        raise NotImplementedError("TODO: store features with TTL")
+        """Serialize features to JSON and store them with an expiration."""
+        key = self._key(customer_id)
+        value = json.dumps(features)
+
+        self.client.set(
+            key,
+            value,
+            ex=self.ttl_seconds,
+        )
 
     def get_customer_features(self, customer_id: str) -> Optional[dict]:
-        """Return the features dict for a customer, or None if absent/expired."""
-        raise NotImplementedError("TODO: read + json.loads, return None if missing")
+        """Return the customer's features, or None if the key is absent."""
+        value = self.client.get(self._key(customer_id))
+
+        if value is None:
+            return None
+
+        return json.loads(value)
 
     def get_customer_features_batch(self, customer_ids: list[str]) -> dict:
-        """Return {customer_id: features_dict_or_None} using a SINGLE round-trip
-        (redis pipeline or MGET), not one GET per id."""
-        raise NotImplementedError("TODO: batch read in one round-trip")
+        """Retrieve several customers in one Redis round-trip."""
+        keys = [self._key(customer_id) for customer_id in customer_ids]
+        values = self.client.mget(keys)
+
+        return {
+            customer_id: json.loads(value) if value is not None else None
+            for customer_id, value in zip(customer_ids, values)
+        }
     # -----------------------------------------------------------------------
 
     def ttl(self, customer_id: str) -> int:

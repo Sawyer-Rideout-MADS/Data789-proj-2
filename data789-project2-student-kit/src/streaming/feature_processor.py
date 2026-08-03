@@ -38,15 +38,33 @@ class FeatureProcessor:
         """Record one transaction into the per-customer window buffer."""
         self._events[txn["customer_id"]].append((to_epoch(txn["timestamp"]), float(txn["amount"])))
 
-    # --- IMPLEMENT ---------------------------------------------------------
+       # --- IMPLEMENT ---------------------------------------------------------
     def features(self, customer_id: str, at_time) -> dict:
-        """Return windowed features for `customer_id` evaluated at `at_time`.
+        """Calculate transaction count and average amount within the window."""
 
-        Include only events with (at_time - window_seconds) < event_time <= at_time.
-        Return {"transaction_count": <int>, "avg_amount": <float>}.
-        If there are no events in the window, return count 0 and avg_amount 0.0.
-        """
-        raise NotImplementedError("TODO: filter to the window, then count + mean")
+        end_time = to_epoch(at_time)
+        start_time = end_time - self.window_seconds
+
+        events = self._events.get(customer_id, [])
+
+        window_events = [
+            (event_time, amount)
+            for event_time, amount in events
+            if start_time < event_time <= end_time
+        ]
+
+        transaction_count = len(window_events)
+
+        if transaction_count == 0:
+            avg_amount = 0.0
+        else:
+            total_amount = sum(amount for _, amount in window_events)
+            avg_amount = total_amount / transaction_count
+
+        return {
+            "transaction_count": transaction_count,
+            "avg_amount": avg_amount,
+        }
     # -----------------------------------------------------------------------
 
     def process_and_store(self, txn: dict) -> dict:
